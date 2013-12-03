@@ -78,7 +78,7 @@ add_executable(ptu_d46_node src/ptu_d46_node.cc)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-# add_dependencies(pgr_camera_driver_node pgr_camera_driver_generate_messages_cpp)
+add_dependencies(ptu_d46_node ptu_d46_driver_gencpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ptu_d46_node ${catkin_LIBRARIES} ptu_d46)
