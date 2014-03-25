@@ -66,9 +66,9 @@ class PTU46_Node  : public hardware_interface::RobotHW {
     private:
         hardware_interface::JointStateInterface jnt_state_interface;
         hardware_interface::PositionJointInterface jnt_pos_interface;
-        hardware_interface::VelocityJointInterface jnt_vel_interface;
+        //hardware_interface::VelocityJointInterface jnt_vel_interface;
         double cmd_pos[2];
-        double cmd_vel[2];
+        //double cmd_vel[2];
         double pos[2];
         double vel[2];
         double eff[2];
@@ -126,13 +126,13 @@ PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_no
     registerInterface(&jnt_pos_interface);
 
     // connect and register the joint velocity interface
-    hardware_interface::JointHandle vel_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_vel[0]);
+    /*hardware_interface::JointHandle vel_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_vel[0]);
     jnt_vel_interface.registerHandle(vel_handle_pan);
 
     hardware_interface::JointHandle vel_handle_tilt(jnt_state_interface.getHandle(tilt_joint), &cmd_vel[1]);
     jnt_vel_interface.registerHandle(vel_handle_tilt);
 
-    registerInterface(&jnt_vel_interface);
+    registerInterface(&jnt_vel_interface);*/
 }
 
 PTU46_Node::~PTU46_Node() {
@@ -203,8 +203,8 @@ void PTU46_Node::write(){//const sensor_msgs::JointState::ConstPtr& msg) {
         return;
     double pan = cmd_pos[0];// msg->position[0];
     double tilt = cmd_pos[1];//msg->position[1];
-    double panspeed = cmd_vel[0];//msg->velocity[0];
-    double tiltspeed = cmd_vel[1];//msg->velocity[1];
+    double panspeed = 0.5;//cmd_vel[0];//msg->velocity[0];
+    double tiltspeed = 0.5;//cmd_vel[1];//msg->velocity[1];
     m_pantilt->SetPosition(PTU46_PAN, pan);
     m_pantilt->SetPosition(PTU46_TILT, tilt);
     m_pantilt->SetSpeed(PTU46_PAN, panspeed);
