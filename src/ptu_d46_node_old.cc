@@ -1,14 +1,10 @@
 #include <string>
-#include <hardware_interface/joint_command_interface.h>
-#include <hardware_interface/joint_state_interface.h>
-#include <hardware_interface/robot_hw.h>
-#include <controller_manager/controller_manager.h>
 #include <ros/ros.h>
 #include <ptu_d46/ptu_d46_driver.h>
-//#include <sensor_msgs/JointState.h>
+#include <sensor_msgs/JointState.h>
 
-//#include <actionlib/server/simple_action_server.h>
-//#include <ptu_d46_driver/GotoAction.h>
+#include <actionlib/server/simple_action_server.h>
+#include <ptu_d46_driver/GotoAction.h>
 
 namespace PTU46 {
 
@@ -31,7 +27,7 @@ namespace PTU46 {
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
-class PTU46_Node  : public hardware_interface::RobotHW {
+class PTU46_Node {
     public:
         PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle);
         ~PTU46_Node();
@@ -43,36 +39,24 @@ class PTU46_Node  : public hardware_interface::RobotHW {
         }
         void Disconnect();
 
-        void read();
-        void write();
-
         // Service Execution
-        //void spinOnce();
+        void spinOnce();
 
         // Callback Methods
-        //void SetGoal(const sensor_msgs::JointState::ConstPtr& msg);
+        void SetGoal(const sensor_msgs::JointState::ConstPtr& msg);
 
     protected:
         PTU46* m_pantilt;
         ros::NodeHandle m_node;
         ros::NodeHandle m_private_node;
-        //ros::Publisher  m_joint_pub;
-        //ros::Subscriber m_joint_sub;
+        ros::Publisher  m_joint_pub;
+        ros::Subscriber m_joint_sub;
 
-        //actionlib::SimpleActionServer<ptu_d46_driver::GotoAction> m_as;
+        actionlib::SimpleActionServer<ptu_d46_driver::GotoAction> m_as;
 
-        //void actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal);
+        void actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal);
 
     private:
-        hardware_interface::JointStateInterface jnt_state_interface;
-        hardware_interface::PositionJointInterface jnt_pos_interface;
-        hardware_interface::VelocityJointInterface jnt_vel_interface;
-        double cmd_pos[2];
-        double cmd_vel[2];
-        double pos[2];
-        double vel[2];
-        double eff[2];
-
         double pan_;
         double tilt_;
 
@@ -92,7 +76,7 @@ class PTU46_Node  : public hardware_interface::RobotHW {
 };
 
 PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle)
-    :m_pantilt(NULL), m_node(node_handle), m_private_node(private_node_handle)/*, m_as(node_handle, "ptu_d46", boost::bind(&PTU46_Node::actionServerCallback, this, _1), false)*/ {
+    :m_pantilt(NULL), m_node(node_handle), m_private_node(private_node_handle), m_as(node_handle, "ptu_d46", boost::bind(&PTU46_Node::actionServerCallback, this, _1), false) {
 
     m_private_node.param<std::string>("base_frame_id", base_frame_id, "ptu_d46_base_link");
     m_private_node.param<std::string>("pan_frame_id", pan_frame_id, "ptu_d46_pan_link");
@@ -106,33 +90,6 @@ PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_no
     m_private_node.param("timeout", t, 5.0);
     timeout = ros::Duration(t);
     m_private_node.param("hz", hz, PTU46_DEFAULT_HZ);
-
-    // connect and register the joint state interface
-    hardware_interface::JointStateHandle state_handle_pan(pan_joint, &pos[0], &vel[0], &eff[0]);
-    jnt_state_interface.registerHandle(state_handle_pan);
-
-    hardware_interface::JointStateHandle state_handle_tilt(tilt_joint, &pos[1], &vel[1], &eff[1]);
-    jnt_state_interface.registerHandle(state_handle_tilt);
-
-    registerInterface(&jnt_state_interface);
-
-    // connect and register the joint position interface
-    hardware_interface::JointHandle pos_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_pos[0]);
-    jnt_pos_interface.registerHandle(pos_handle_pan);
-
-    hardware_interface::JointHandle pos_handle_tilt(jnt_state_interface.getHandle(tilt_joint), &cmd_pos[1]);
-    jnt_pos_interface.registerHandle(pos_handle_tilt);
-
-    registerInterface(&jnt_pos_interface);
-
-    // connect and register the joint velocity interface
-    hardware_interface::JointHandle vel_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_vel[0]);
-    jnt_vel_interface.registerHandle(vel_handle_pan);
-
-    hardware_interface::JointHandle vel_handle_tilt(jnt_state_interface.getHandle(tilt_joint), &cmd_vel[1]);
-    jnt_vel_interface.registerHandle(vel_handle_tilt);
-
-    registerInterface(&jnt_vel_interface);
 }
 
 PTU46_Node::~PTU46_Node() {
@@ -178,14 +135,14 @@ void PTU46_Node::Connect() {
 
 
     // Publishers : Only publish the most recent reading
-    /*m_joint_pub = m_node.advertise
+    m_joint_pub = m_node.advertise
                   <sensor_msgs::JointState>("joint_states", 1);
 
     // Subscribers : Only subscribe to the most recent instructions
     m_joint_sub = m_node.subscribe
                   <sensor_msgs::JointState>("cmd", 1, &PTU46_Node::SetGoal, this);
 
-    m_as.start();*/
+    m_as.start();
 
 }
 
@@ -198,13 +155,13 @@ void PTU46_Node::Disconnect() {
 }
 
 /** Callback for getting new Goal JointState */
-void PTU46_Node::write(){//const sensor_msgs::JointState::ConstPtr& msg) {
+void PTU46_Node::SetGoal(const sensor_msgs::JointState::ConstPtr& msg) {
     if (! ok())
         return;
-    double pan = cmd_pos[0];// msg->position[0];
-    double tilt = cmd_pos[1];//msg->position[1];
-    double panspeed = cmd_vel[0];//msg->velocity[0];
-    double tiltspeed = cmd_vel[1];//msg->velocity[1];
+    double pan = msg->position[0];
+    double tilt = msg->position[1];
+    double panspeed = msg->velocity[0];
+    double tiltspeed = msg->velocity[1];
     m_pantilt->SetPosition(PTU46_PAN, pan);
     m_pantilt->SetPosition(PTU46_TILT, tilt);
     m_pantilt->SetSpeed(PTU46_PAN, panspeed);
@@ -212,7 +169,7 @@ void PTU46_Node::write(){//const sensor_msgs::JointState::ConstPtr& msg) {
 }
 
 /** Callback for the action server */
-/*void PTU46_Node::actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal) {
+void PTU46_Node::actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal) {
     if (!ok())
         return;
 
@@ -282,13 +239,13 @@ void PTU46_Node::write(){//const sensor_msgs::JointState::ConstPtr& msg) {
 
         loop_rate.sleep();
     }
-}*/
+}
 
 /**
  * Publishes a joint_state message with position and speed.
  * Also sends out updated TF info.
  */
-void PTU46_Node::read() {
+void PTU46_Node::spinOnce() {
     if (! ok())
         return;
 
@@ -300,7 +257,7 @@ void PTU46_Node::read() {
     tilt_speed_ = m_pantilt->GetSpeed(PTU46_TILT);
 
     // Publish Position & Speed
-    /*sensor_msgs::JointState joint_state;
+    sensor_msgs::JointState joint_state;
     joint_state.header.stamp = ros::Time::now();
     joint_state.header.frame_id = base_frame_id;
     joint_state.name.resize(2);
@@ -312,15 +269,7 @@ void PTU46_Node::read() {
     joint_state.name[1] = tilt_joint;
     joint_state.position[1] = tilt_;
     joint_state.velocity[1] = tilt_speed_;
-    m_joint_pub.publish(joint_state);*/
-
-    pos[0] = pan_;
-    vel[0] = pan_speed_;
-    eff[0] = 0.0;
-
-    pos[1] = tilt_;
-    vel[1] = tilt_speed_;
-    eff[1] = 0.0;
+    m_joint_pub.publish(joint_state);
 }
 
 } // PTU46 namespace
@@ -336,25 +285,17 @@ int main(int argc, char** argv) {
     if (! ptu_node.ok())
         return -1;
 
-    controller_manager::ControllerManager cm(&ptu_node);
-
     // Query for polling frequency
     int hz;
     pn.param("hz", hz, PTU46_DEFAULT_HZ);
     ros::Rate loop_rate(hz);
 
-    ros::AsyncSpinner spinner(4);
-    spinner.start();
-
     while (ros::ok() && ptu_node.ok()) {
         // Publish position & velocity
-        //ptu_node.spinOnce();
-        ptu_node.read();
-        cm.update(ros::Time::now(), ros::Duration(1/hz));
-        ptu_node.write();
+        ptu_node.spinOnce();
 
         // Process a round of subscription messages
-        //ros::spinOnce();
+        ros::spinOnce();
 
         // This will adjust as needed per iteration
         loop_rate.sleep();
@@ -364,8 +305,6 @@ int main(int argc, char** argv) {
         ROS_ERROR("pan/tilt unit disconnected prematurely");
         return -1;
     }
-
-    spinner.stop();
 
     return 0;
 }
