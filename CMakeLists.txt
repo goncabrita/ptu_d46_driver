@@ -4,7 +4,7 @@ project(ptu_d46_driver)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs tf rospy actionlib actionlib_msgs hardware_interface controller_manager)
+find_package(catkin REQUIRED COMPONENTS roscpp sensor_msgs tf rospy actionlib actionlib_msgs hardware_interface controller_manager control_msgs)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -75,13 +75,15 @@ add_library(ptu_d46 src/ptu_d46_driver.cc)
 
 ## Declare a cpp executable
 add_executable(ptu_d46_node src/ptu_d46_node.cc)
+add_executable(ptu_d46_node_v0 src/ptu_d46_node_v0.cc)
 
 ## Add cmake target dependencies of the executable/library
 ## as an example, message headers may need to be generated before nodes
-add_dependencies(ptu_d46_node ptu_d46_driver_generate_messages)
+add_dependencies(ptu_d46_node_v0 ptu_d46_driver_generate_messages)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ptu_d46_node ${catkin_LIBRARIES} ptu_d46)
+target_link_libraries(ptu_d46_node_v0 ${catkin_LIBRARIES} ptu_d46)
 
 #############
 ## Install ##

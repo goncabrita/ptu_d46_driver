@@ -1,16 +1,10 @@
 #include <string>
-#include <hardware_interface/joint_command_interface.h>
-#include <hardware_interface/joint_state_interface.h>
-#include <hardware_interface/robot_hw.h>
-#include <controller_manager/controller_manager.h>
 #include <ros/ros.h>
 #include <ptu_d46/ptu_d46_driver.h>
-//#include <sensor_msgs/JointState.h>
 
-//#include <actionlib/server/simple_action_server.h>
-//#include <ptu_d46_driver/GotoAction.h>
-
-namespace PTU46 {
+#include <actionlib/server/simple_action_server.h>
+#include <control_msgs/FollowJointTrajectoryAction.h>
+#include <sensor_msgs/JointState.h>
 
 /**
  * PTU46 ROS Package
@@ -31,119 +25,94 @@ namespace PTU46 {
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
-class PTU46_Node  : public hardware_interface::RobotHW {
+class PTU46_Node
+{
     public:
         PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle);
         ~PTU46_Node();
 
         // Service Control
         void Connect();
-        bool ok() {
+        bool Ok()
+        {
             return m_pantilt != NULL;
         }
         void Disconnect();
 
-        void read();
-        void write();
-
         // Service Execution
-        //void spinOnce();
+        void SpinOnce();
 
         // Callback Methods
-        //void SetGoal(const sensor_msgs::JointState::ConstPtr& msg);
+        void SetGoal(const trajectory_msgs::JointTrajectory::ConstPtr& msg);
 
     protected:
-        PTU46* m_pantilt;
+        PTU46::PTU46* m_pantilt;
         ros::NodeHandle m_node;
         ros::NodeHandle m_private_node;
-        //ros::Publisher  m_joint_pub;
-        //ros::Subscriber m_joint_sub;
+        ros::Publisher  m_joint_pub;
+        ros::Subscriber m_joint_sub;
 
-        //actionlib::SimpleActionServer<ptu_d46_driver::GotoAction> m_as;
-
-        //void actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal);
+        actionlib::SimpleActionServer<control_msgs::FollowJointTrajectoryAction> m_as;
+        bool as_active_;
+        void actionServerCallback(const control_msgs::FollowJointTrajectoryGoalConstPtr &goal);
 
     private:
-        hardware_interface::JointStateInterface jnt_state_interface;
-        hardware_interface::PositionJointInterface jnt_pos_interface;
-        //hardware_interface::VelocityJointInterface jnt_vel_interface;
-        double cmd_pos[2];
-        //double cmd_vel[2];
-        double pos[2];
-        double vel[2];
-        double eff[2];
+        bool Write(double pan_pos, double pan_vel, double tilt_pos, double tilt_vel);
+        bool CheckJointNames(const std::vector<std::string> *joint_names);
+        bool CheckGoal(const std::vector<trajectory_msgs::JointTrajectoryPoint> *points);
 
         double pan_;
         double tilt_;
-
         double pan_speed_;
         double tilt_speed_;
+        double min_pan_;
+        double max_pan_;
+        double min_pan_speed_;
+        double max_pan_speed_;
+        double pan_step_;
+        double min_tilt_;
+        double max_tilt_;
+        double min_tilt_speed_;
+        double max_tilt_speed_;
+        double tilt_step_;
+        double pan_tolerance_;
+        double tilt_tolerance_;
+        ros::Duration time_tolerance_;
 
-        int hz;
-        ros::Duration timeout;
-        double goal_tolerance;
+        int pan_index_;
+        int tilt_index_;
 
-        std::string base_frame_id;
-        std::string pan_frame_id;
-        std::string tilt_frame_id;
+        std::string pan_joint_;
+        std::string tilt_joint_;
 
-        std::string pan_joint;
-        std::string tilt_joint;
+        ros::Time start_time_;
+        ros::Time goal_start_time_;
+        std::list<trajectory_msgs::JointTrajectoryPoint> trajectory_;
+        std::vector<control_msgs::JointTolerance> path_tolerance_;
+        std::vector<control_msgs::JointTolerance> goal_tolerance_;
+        ros::Duration goal_time_tolerance_;
 };
 
-PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle)
-    :m_pantilt(NULL), m_node(node_handle), m_private_node(private_node_handle)/*, m_as(node_handle, "ptu_d46", boost::bind(&PTU46_Node::actionServerCallback, this, _1), false)*/ {
+PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle) :
+    m_pantilt(NULL),
+    m_node(node_handle), m_private_node(private_node_handle),
+    m_as(node_handle, "/ptu_d46_controller/follow_joint_trajectory", boost::bind(&PTU46_Node::actionServerCallback, this, _1), false)
+{
 
-    m_private_node.param<std::string>("base_frame_id", base_frame_id, "ptu_d46_base_link");
-    m_private_node.param<std::string>("pan_frame_id", pan_frame_id, "ptu_d46_pan_link");
-    m_private_node.param<std::string>("tilt_frame_id", tilt_frame_id, "ptu_d46_tilt_link");
-
-    m_private_node.param<std::string>("pan_joint", pan_joint, "ptu_d46_pan_joint");
-    m_private_node.param<std::string>("tilt_joint", tilt_joint, "ptu_d46_tilt_joint");
-
-    m_private_node.param("goal_tolerance", goal_tolerance, 0.01);
-    double t;
-    m_private_node.param("timeout", t, 5.0);
-    timeout = ros::Duration(t);
-    m_private_node.param("hz", hz, PTU46_DEFAULT_HZ);
-
-    // connect and register the joint state interface
-    hardware_interface::JointStateHandle state_handle_pan(pan_joint, &pos[0], &vel[0], &eff[0]);
-    jnt_state_interface.registerHandle(state_handle_pan);
-
-    hardware_interface::JointStateHandle state_handle_tilt(tilt_joint, &pos[1], &vel[1], &eff[1]);
-    jnt_state_interface.registerHandle(state_handle_tilt);
-
-    registerInterface(&jnt_state_interface);
-
-    // connect and register the joint position interface
-    hardware_interface::JointHandle pos_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_pos[0]);
-    jnt_pos_interface.registerHandle(pos_handle_pan);
-
-    hardware_interface::JointHandle pos_handle_tilt(jnt_state_interface.getHandle(tilt_joint), &cmd_pos[1]);
-    jnt_pos_interface.registerHandle(pos_handle_tilt);
-
-    registerInterface(&jnt_pos_interface);
-
-    // connect and register the joint velocity interface
-    /*hardware_interface::JointHandle vel_handle_pan(jnt_state_interface.getHandle(pan_joint), &cmd_vel[0]);
-    jnt_vel_interface.registerHandle(vel_handle_pan);
-
-    hardware_interface::JointHandle vel_handle_tilt(jnt_state_interface.getHandle(tilt_joint), &cmd_vel[1]);
-    jnt_vel_interface.registerHandle(vel_handle_tilt);
-
-    registerInterface(&jnt_vel_interface);*/
 }
 
-PTU46_Node::~PTU46_Node() {
+PTU46_Node::~PTU46_Node()
+{
     Disconnect();
 }
 
 /** Opens the connection to the PTU and sets appropriate parameters.
     Also manages subscriptions/publishers */
-void PTU46_Node::Connect() {
+void PTU46_Node::Connect()
+{
     // If we are reconnecting, first make sure to disconnect
-    if (ok()) {
+    if(Ok())
+    {
         Disconnect();
     }
 
@@ -154,142 +123,212 @@ void PTU46_Node::Connect() {
     m_private_node.param("baud", baud, PTU46_DEFAULT_BAUD);
 
     // Connect to the PTU
-    ROS_INFO("Attempting to connect to %s...", port.c_str());
-    m_pantilt = new PTU46(port.c_str(), baud);
+    ROS_INFO("PTU_D46 - %s - Attempting to connect to [%s]...", __FUNCTION__, port.c_str());
+    m_pantilt = new PTU46::PTU46(port.c_str(), baud);
     ROS_ASSERT(m_pantilt != NULL);
-    if (! m_pantilt->isOpen()) {
-        ROS_ERROR("Could not connect to pan/tilt unit [%s]", port.c_str());
+    if(!m_pantilt->isOpen())
+    {
         Disconnect();
+        ROS_FATAL("PTU_D46 - %s - Could not connect to [%s]", __FUNCTION__, port.c_str());
+        ROS_BREAK();
         return;
     }
-    ROS_INFO("Connected!");
+    ROS_INFO("PTU_D46 - %s - Connected!", __FUNCTION__);
 
-    m_private_node.setParam("min_tilt", m_pantilt->GetMin(PTU46_TILT));
-    m_private_node.setParam("max_tilt", m_pantilt->GetMax(PTU46_TILT));
-    m_private_node.setParam("min_tilt_speed", m_pantilt->GetMinSpeed(PTU46_TILT));
-    m_private_node.setParam("max_tilt_speed", m_pantilt->GetMaxSpeed(PTU46_TILT));
-    m_private_node.setParam("tilt_step", m_pantilt->GetResolution(PTU46_TILT));
+    m_private_node.param<std::string>("pan_joint", pan_joint_, "ptu_d46_pan_joint");
+    m_private_node.param<std::string>("tilt_joint", tilt_joint_, "ptu_d46_tilt_joint");
 
-    m_private_node.setParam("min_pan", m_pantilt->GetMin(PTU46_PAN));
-    m_private_node.setParam("max_pan", m_pantilt->GetMax(PTU46_PAN));
-    m_private_node.setParam("min_pan_speed", m_pantilt->GetMinSpeed(PTU46_PAN));
-    m_private_node.setParam("max_pan_speed", m_pantilt->GetMaxSpeed(PTU46_PAN));
-    m_private_node.setParam("pan_step", m_pantilt->GetResolution(PTU46_PAN));
+    m_private_node.param<double>("min_tilt", min_tilt_, m_pantilt->GetMin(PTU46_TILT));
+    m_private_node.param<double>("max_tilt", max_tilt_, m_pantilt->GetMax(PTU46_TILT));
+    m_private_node.param<double>("min_tilt_speed", min_tilt_speed_, m_pantilt->GetMinSpeed(PTU46_TILT));
+    m_private_node.param<double>("max_tilt_speed", max_tilt_speed_, m_pantilt->GetMaxSpeed(PTU46_TILT));
+    m_private_node.param<double>("tilt_step", tilt_step_, m_pantilt->GetResolution(PTU46_TILT));
 
+    m_private_node.param<double>("min_pan", min_pan_, m_pantilt->GetMin(PTU46_PAN));
+    m_private_node.param<double>("max_pan", max_pan_, m_pantilt->GetMax(PTU46_PAN));
+    m_private_node.param<double>("min_pan_speed", min_pan_speed_, m_pantilt->GetMinSpeed(PTU46_PAN));
+    m_private_node.param<double>("max_pan_speed", max_pan_speed_, m_pantilt->GetMaxSpeed(PTU46_PAN));
+    m_private_node.param<double>("pan_step", pan_step_, m_pantilt->GetResolution(PTU46_PAN));
+
+    m_private_node.param("pan_tolerance", pan_tolerance_, pan_step_*10.0);
+    m_private_node.param("tilt_tolerance", tilt_tolerance_, tilt_step_*10.0);
 
     // Publishers : Only publish the most recent reading
-    /*m_joint_pub = m_node.advertise
-                  <sensor_msgs::JointState>("joint_states", 1);
+    m_joint_pub = m_node.advertise<sensor_msgs::JointState>("/ptu_d46_controller/state", 1);
 
     // Subscribers : Only subscribe to the most recent instructions
-    m_joint_sub = m_node.subscribe
-                  <sensor_msgs::JointState>("cmd", 1, &PTU46_Node::SetGoal, this);
+    m_joint_sub = m_node.subscribe("/ptu_d46_controller/command", 1, &PTU46_Node::SetGoal, this);
 
-    m_as.start();*/
-
+    m_as.start();
+    as_active_ = false;
 }
 
 /** Disconnect */
-void PTU46_Node::Disconnect() {
-    if (m_pantilt != NULL) {
+void PTU46_Node::Disconnect()
+{
+    if(m_pantilt != NULL)
+    {
         delete m_pantilt;   // Closes the connection
         m_pantilt = NULL;   // Marks the service as disconnected
     }
 }
 
+/** Write positions and velocities to the PTU **/
+bool PTU46_Node::Write(double pan_pos, double pan_vel, double tilt_pos, double tilt_vel)
+{
+    m_pantilt->SetPosition(PTU46_PAN, pan_pos);
+    m_pantilt->SetPosition(PTU46_TILT, tilt_pos);
+    m_pantilt->SetSpeed(PTU46_PAN, pan_vel);
+    m_pantilt->SetSpeed(PTU46_TILT, tilt_vel);
+    start_time_ = ros::Time::now();
+}
+
+/** Check joint names **/
+bool PTU46_Node::CheckJointNames(const std::vector<std::string> *joint_names)
+{
+    int found_joint = 0;
+    for(int i=0 ; i<joint_names->size() ; i++)
+    {
+        if(pan_joint_.compare(joint_names->at(i)) == 0)
+        {
+            pan_index_ = i;
+            found_joint++;
+        }
+        else if(tilt_joint_.compare(joint_names->at(i)) == 0)
+        {
+            tilt_index_ = i;
+            found_joint++;
+        }
+    }
+    return (joint_names->size() == found_joint);
+}
+
+/** Check the joint limits **/
+bool PTU46_Node::CheckGoal(const std::vector<trajectory_msgs::JointTrajectoryPoint> *points)
+{
+    for(int i=0 ; i<points->size() ; i++)
+    {
+        if(     points->at(i).positions[pan_index_] < min_pan_ ||
+                points->at(i).positions[pan_index_] > max_pan_ ||
+                points->at(i).positions[tilt_index_] < min_tilt_ ||
+                points->at(i).positions[tilt_index_] > max_tilt_ ||
+                points->at(i).velocities[pan_index_] > max_pan_speed_ ||
+                points->at(i).velocities[tilt_index_] > max_tilt_speed_) return false;
+    }
+    return true;
+}
+
 /** Callback for getting new Goal JointState */
-void PTU46_Node::write(){//const sensor_msgs::JointState::ConstPtr& msg) {
-    if (! ok())
+void PTU46_Node::SetGoal(const trajectory_msgs::JointTrajectory::ConstPtr& msg)
+{
+    if(!Ok() || !CheckJointNames(&msg->joint_names) || !CheckGoal(&msg->points))
         return;
-    double pan = cmd_pos[0];// msg->position[0];
-    double tilt = cmd_pos[1];//msg->position[1];
-    double panspeed = 0.5;//cmd_vel[0];//msg->velocity[0];
-    double tiltspeed = 0.5;//cmd_vel[1];//msg->velocity[1];
-    m_pantilt->SetPosition(PTU46_PAN, pan);
-    m_pantilt->SetPosition(PTU46_TILT, tilt);
-    m_pantilt->SetSpeed(PTU46_PAN, panspeed);
-    m_pantilt->SetSpeed(PTU46_TILT, tiltspeed);
+
+    if(as_active_)
+    {
+        ROS_WARN("PTU_D46 - %s - Goal preempted.", __FUNCTION__);
+        // set the action state to preempted
+        m_as.setPreempted();
+        as_active_ = false;
+    }
+
+    trajectory_.clear();
+    for(int i=0 ; i<msg->points.size() ; i++)
+    {
+        trajectory_.push_back(msg->points[i]);
+    }
+
+    Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
 }
 
 /** Callback for the action server */
-/*void PTU46_Node::actionServerCallback(const ptu_d46_driver::GotoGoalConstPtr &goal) {
-    if (!ok())
+void PTU46_Node::actionServerCallback(const control_msgs::FollowJointTrajectoryGoalConstPtr &goal)
+{
+    if(!Ok())
         return;
 
-    // helper variables
-    ros::Rate loop_rate(hz);
+    if(!CheckJointNames(&goal->trajectory.joint_names))
+    {
+        control_msgs::FollowJointTrajectoryResult result;
+        result.error_code = control_msgs::FollowJointTrajectoryResult::INVALID_JOINTS;
+        m_as.setAborted(result);
+        ROS_ERROR("PTU-D46 - %s - Invalid joints!", __FUNCTION__);
+        return;
+    }
 
-    ros::Time start_time = ros::Time::now();
+    if(!CheckGoal(&goal->trajectory.points))
+    {
+        control_msgs::FollowJointTrajectoryResult result;
+        result.error_code = control_msgs::FollowJointTrajectoryResult::INVALID_GOAL;
+        m_as.setAborted(result);
+        ROS_ERROR("PTU-D46 - %s - Invalid goal!", __FUNCTION__);
+        return;
+    }
 
-    double pan = goal->joint.position[0];
-    double tilt = goal->joint.position[1];
-    double panspeed = goal->joint.velocity[0];
-    double tiltspeed = goal->joint.velocity[1];
-    m_pantilt->SetPosition(PTU46_PAN, pan);
-    m_pantilt->SetPosition(PTU46_TILT, tilt);
-    m_pantilt->SetSpeed(PTU46_PAN, panspeed);
-    m_pantilt->SetSpeed(PTU46_TILT, tiltspeed);
+    as_active_ = true;
 
+    trajectory_.clear();
+    for(int i=0 ; i<goal->trajectory.points.size() ; i++)
+    {
+        trajectory_.push_back(goal->trajectory.points[i]);
+    }
+
+    path_tolerance_ = goal->path_tolerance;
+    goal_tolerance_ = goal->goal_tolerance;
+    goal_time_tolerance_ = goal->goal_time_tolerance;
+    Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
+
+    goal_start_time_ = ros::Time::now();
+
+    ros::Rate r(10.0);
     // start executing the action
-    while(ros::ok() && ok())
+    while(ros::ok() && Ok() && as_active_)
     {
         // check that preempt has not been requested by the client
         if(m_as.isPreemptRequested())
         {
-            ROS_INFO("PTU_D46 - %s - Goal preempted", __FUNCTION__);
+            ROS_WARN("PTU_D46 - %s - Goal preempted.", __FUNCTION__);
             // set the action state to preempted
             m_as.setPreempted();
+            as_active_ = false;
             break;
         }
 
         // Read Position & Speed
-        sensor_msgs::JointState joint_state;
-        joint_state.header.stamp = ros::Time::now();
-        joint_state.header.frame_id = base_frame_id;
-        joint_state.name.resize(2);
-        joint_state.position.resize(2);
-        joint_state.velocity.resize(2);
-        joint_state.name[0] = pan_joint;
-        joint_state.position[0] = pan_;
-        joint_state.velocity[0] = pan_speed_;
-        joint_state.name[1] = tilt_joint;
-        joint_state.position[1] = tilt_;
-        joint_state.velocity[1] = tilt_speed_;
-
-        if(ros::Time::now() - start_time > timeout)
-        {
-            ptu_d46_driver::GotoResult result;
-            result.joint = joint_state;
-            ROS_INFO("PTU-D46 - %s - Goal timeout", __FUNCTION__);
-            // set the action state to failed
-            m_as.setAborted();
-            break;
-        }
-
-        if( fabs(goal->joint.position[0] - pan_) <= goal_tolerance  && fabs(goal->joint.position[1] - tilt_) <= goal_tolerance )
-        {
-            ptu_d46_driver::GotoResult result;
-            result.joint = joint_state;
-            // set the action state to succeeded
-            m_as.setSucceeded(result);
-            break;
-        }
-
-        ptu_d46_driver::GotoFeedback feedback;
-        feedback.joint = joint_state;
+        control_msgs::FollowJointTrajectoryFeedback feedback;
+        feedback.header.stamp = ros::Time::now();
+        feedback.joint_names.push_back(pan_joint_);
+        feedback.desired.positions.push_back(trajectory_.front().positions[pan_index_]);
+        feedback.desired.velocities.push_back(trajectory_.front().velocities[pan_index_]);
+        feedback.actual.positions.push_back(pan_);
+        feedback.actual.velocities.push_back(pan_speed_);
+        feedback.error.positions.push_back(trajectory_.front().positions[pan_index_] - pan_);
+        feedback.error.velocities.push_back(trajectory_.front().velocities[pan_index_] - pan_speed_);
+        feedback.joint_names.push_back(tilt_joint_);
+        feedback.desired.positions.push_back(trajectory_.front().positions[tilt_index_]);
+        feedback.desired.velocities.push_back(trajectory_.front().velocities[tilt_index_]);
+        feedback.actual.positions.push_back(tilt_);
+        feedback.actual.velocities.push_back(tilt_speed_);
+        feedback.error.positions.push_back(trajectory_.front().positions[tilt_index_] - tilt_);
+        feedback.error.velocities.push_back(trajectory_.front().velocities[tilt_index_] - tilt_speed_);
+        feedback.desired.time_from_start = trajectory_.front().time_from_start;
+        feedback.actual.time_from_start = ros::Time::now() - start_time_;
+        feedback.error.time_from_start = ros::Time::now() - start_time_ - trajectory_.front().time_from_start;
         // publish the feedback
         m_as.publishFeedback(feedback);
 
-        loop_rate.sleep();
+        r.sleep();
     }
-}*/
+
+    as_active_ = false;
+}
 
 /**
  * Publishes a joint_state message with position and speed.
  * Also sends out updated TF info.
  */
-void PTU46_Node::read() {
-    if (! ok())
+void PTU46_Node::SpinOnce() {
+    if (! Ok())
         return;
 
     // Read Position & Speed
@@ -300,30 +339,90 @@ void PTU46_Node::read() {
     tilt_speed_ = m_pantilt->GetSpeed(PTU46_TILT);
 
     // Publish Position & Speed
-    /*sensor_msgs::JointState joint_state;
+    sensor_msgs::JointState joint_state;
     joint_state.header.stamp = ros::Time::now();
-    joint_state.header.frame_id = base_frame_id;
     joint_state.name.resize(2);
     joint_state.position.resize(2);
     joint_state.velocity.resize(2);
-    joint_state.name[0] = pan_joint;
+    joint_state.name[0] = pan_joint_;
     joint_state.position[0] = pan_;
     joint_state.velocity[0] = pan_speed_;
-    joint_state.name[1] = tilt_joint;
+    joint_state.name[1] = tilt_joint_;
     joint_state.position[1] = tilt_;
     joint_state.velocity[1] = tilt_speed_;
-    m_joint_pub.publish(joint_state);*/
+    m_joint_pub.publish(joint_state);
 
-    pos[0] = pan_;
-    vel[0] = pan_speed_;
-    eff[0] = 0.0;
+    // If there is stuff on the queue deal with it
+    if(trajectory_.size() > 0)
+    {
+        double pan_tolerance = pan_tolerance_;
+        double tilt_tolerance = tilt_tolerance_;
+        ros::Duration time_tolerance = time_tolerance_;
 
-    pos[1] = tilt_;
-    vel[1] = tilt_speed_;
-    eff[1] = 0.0;
+        if(as_active_)
+        {
+            if(trajectory_.size() == 1 && goal_tolerance_[pan_index_].position > 0 && goal_tolerance_[tilt_index_].position > 0)
+            {
+                pan_tolerance = goal_tolerance_[pan_index_].position;
+                tilt_tolerance = goal_tolerance_[tilt_index_].position;
+            }
+            else if(path_tolerance_[pan_index_].position > 0 && path_tolerance_[tilt_index_].position > 0)
+            {
+                pan_tolerance = path_tolerance_[pan_index_].position;
+                tilt_tolerance = path_tolerance_[tilt_index_].position;
+            }
+
+            if(goal_time_tolerance_ > time_tolerance) time_tolerance = goal_time_tolerance_;
+        }
+
+        if(fabs(trajectory_.front().positions[pan_index_] - pan_) <= pan_tolerance && fabs(trajectory_.front().positions[tilt_index_] - tilt_) <= tilt_tolerance)
+        {
+            // Remove it from the queue
+            trajectory_.pop_front();
+            if(as_active_ && trajectory_.size() == 0)
+            {
+                // And set the AS to successful!
+                control_msgs::FollowJointTrajectoryResult result;
+                result.error_code = control_msgs::FollowJointTrajectoryResult::SUCCESSFUL;
+                m_as.setSucceeded(result);
+                as_active_ = false;
+            }
+            else if(trajectory_.size() > 0)
+            {
+                // And keep on going!
+                Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
+            }
+        }
+        // If we timed out...
+        else if(as_active_ && ros::Time::now() > goal_start_time_ + goal_time_tolerance_)
+        {
+            // Clear the trajectory queue
+            trajectory_.clear();
+            // And abort the AS.
+            control_msgs::FollowJointTrajectoryResult result;
+            result.error_code = control_msgs::FollowJointTrajectoryResult::GOAL_TOLERANCE_VIOLATED;
+            m_as.setAborted(result);
+            as_active_ = false;
+        }
+        else if(ros::Time::now() > start_time_ + time_tolerance)
+        {
+            if(as_active_ && goal_tolerance_[pan_index_].position != -1 && goal_tolerance_[tilt_index_].position != -1)
+            {
+                trajectory_.clear();
+
+                // And abort the AS.
+                control_msgs::FollowJointTrajectoryResult result;
+                result.error_code = control_msgs::FollowJointTrajectoryResult::PATH_TOLERANCE_VIOLATED;
+                m_as.setAborted(result);
+                as_active_ = false;
+            }
+            else if(!as_active_)
+            {
+                trajectory_.clear();
+            }
+        }
+    }
 }
-
-} // PTU46 namespace
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "ptu_d46");
@@ -331,37 +430,26 @@ int main(int argc, char** argv) {
     ros::NodeHandle pn("~");
 
     // Connect to PTU
-    PTU46::PTU46_Node ptu_node(n, pn);
+    PTU46_Node ptu_node(n, pn);
     ptu_node.Connect();
-    if (! ptu_node.ok())
-        return -1;
-
-    controller_manager::ControllerManager cm(&ptu_node);
 
     // Query for polling frequency
     int hz;
-    pn.param("hz", hz, PTU46_DEFAULT_HZ);
+    pn.param("hz", hz, 10);
     ros::Rate loop_rate(hz);
 
-    ros::AsyncSpinner spinner(4);
+    ros::AsyncSpinner spinner(5);
     spinner.start();
 
-    while (ros::ok() && ptu_node.ok()) {
-        // Publish position & velocity
-        //ptu_node.spinOnce();
-        ptu_node.read();
-        cm.update(ros::Time::now(), ros::Duration(1/hz));
-        ptu_node.write();
-
-        // Process a round of subscription messages
-        //ros::spinOnce();
-
-        // This will adjust as needed per iteration
+    while(ros::ok() && ptu_node.Ok())
+    {
+        ptu_node.SpinOnce();
         loop_rate.sleep();
     }
 
-    if (! ptu_node.ok()) {
-        ROS_ERROR("pan/tilt unit disconnected prematurely");
+    if(!ptu_node.Ok())
+    {
+        ROS_ERROR("PTU_D46 -- pan/tilt unit disconnected prematurely");
         return -1;
     }
 
