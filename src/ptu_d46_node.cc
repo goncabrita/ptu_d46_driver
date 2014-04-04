@@ -5,6 +5,7 @@
 #include <actionlib/server/simple_action_server.h>
 #include <control_msgs/FollowJointTrajectoryAction.h>
 #include <control_msgs/JointTrajectoryControllerState.h>
+#include <sensor_msgs/JointState.h>
 
 /**
  * PTU46 ROS Package
@@ -45,10 +46,13 @@ class PTU46_Node
         // Callback Methods
         void SetGoal(const trajectory_msgs::JointTrajectory::ConstPtr& msg);
 
+        void jointStateSpinner();
+
     protected:
         PTU46::PTU46* m_pantilt;
         ros::NodeHandle m_node;
         ros::NodeHandle m_private_node;
+        ros::Publisher  m_joint_state_pub;
         ros::Publisher  m_joint_pub;
         ros::Subscriber m_joint_sub;
 
@@ -91,6 +95,8 @@ class PTU46_Node
         std::vector<control_msgs::JointTolerance> path_tolerance_;
         std::vector<control_msgs::JointTolerance> goal_tolerance_;
         ros::Duration goal_time_tolerance_;
+
+        double joint_state_rate_;
 };
 
 PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle) :
@@ -153,11 +159,15 @@ void PTU46_Node::Connect()
     m_private_node.param("pan_tolerance", pan_tolerance_, pan_step_*10.0);
     m_private_node.param("tilt_tolerance", tilt_tolerance_, tilt_step_*10.0);
 
+    m_private_node.param("joint_state_rate", joint_state_rate_, 50.0);
+
     // Publishers : Only publish the most recent reading
     m_joint_pub = m_node.advertise<control_msgs::JointTrajectoryControllerState>("/ptu_d46_controller/state", 1);
 
     // Subscribers : Only subscribe to the most recent instructions
     m_joint_sub = m_node.subscribe("/ptu_d46_controller/command", 1, &PTU46_Node::SetGoal, this);
+
+    m_joint_state_pub = m_node.advertise<sensor_msgs::JointState>("/joint_states", 50);
 
     m_as.start();
     as_active_ = false;
@@ -323,6 +333,28 @@ void PTU46_Node::actionServerCallback(const control_msgs::FollowJointTrajectoryG
     as_active_ = false;
 }
 
+void PTU46_Node::jointStateSpinner()
+{
+    ros::Rate r(joint_state_rate_);
+    while(ros::ok())
+    {
+        sensor_msgs::JointState msg;
+
+        msg.header.stamp = ros::Time::now();
+        msg.name.push_back(pan_joint_);
+        msg.position.push_back(pan_);
+        msg.velocity.push_back(pan_speed_);
+        msg.effort.push_back(0.0);
+        msg.name.push_back(tilt_joint_);
+        msg.position.push_back(tilt_);
+        msg.velocity.push_back(tilt_speed_);
+        msg.effort.push_back(0.0);
+
+        m_joint_state_pub.publish(msg);
+        r.sleep();
+    }
+}
+
 /**
  * Publishes a joint_state message with position and speed.
  * Also sends out updated TF info.
@@ -452,6 +484,8 @@ int main(int argc, char** argv) {
     ros::AsyncSpinner spinner(5);
     spinner.start();
 
+    boost::thread joint_state_thread(&PTU46_Node::jointStateSpinner, &ptu_node);
+
     while(ros::ok() && ptu_node.Ok())
     {
         ptu_node.SpinOnce();
@@ -463,6 +497,8 @@ int main(int argc, char** argv) {
         ROS_ERROR("PTU_D46 -- pan/tilt unit disconnected prematurely");
         return -1;
     }
+
+    joint_state_thread.join();
 
     spinner.stop();
 
