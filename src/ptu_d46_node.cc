@@ -342,22 +342,25 @@ void PTU46_Node::SpinOnce() {
     control_msgs::JointTrajectoryControllerState joint_state;
     joint_state.header.stamp = ros::Time::now();
     joint_state.joint_names.push_back(pan_joint_);
-    joint_state.desired.positions.push_back(trajectory_.front().positions[pan_index_]);
-    joint_state.desired.velocities.push_back(trajectory_.front().velocities[pan_index_]);
     joint_state.actual.positions.push_back(pan_);
     joint_state.actual.velocities.push_back(pan_speed_);
-    joint_state.error.positions.push_back(trajectory_.front().positions[pan_index_] - pan_);
-    joint_state.error.velocities.push_back(trajectory_.front().velocities[pan_index_] - pan_speed_);
     joint_state.joint_names.push_back(tilt_joint_);
-    joint_state.desired.positions.push_back(trajectory_.front().positions[tilt_index_]);
-    joint_state.desired.velocities.push_back(trajectory_.front().velocities[tilt_index_]);
     joint_state.actual.positions.push_back(tilt_);
     joint_state.actual.velocities.push_back(tilt_speed_);
-    joint_state.error.positions.push_back(trajectory_.front().positions[tilt_index_] - tilt_);
-    joint_state.error.velocities.push_back(trajectory_.front().velocities[tilt_index_] - tilt_speed_);
-    joint_state.desired.time_from_start = trajectory_.front().time_from_start;
-    joint_state.actual.time_from_start = ros::Time::now() - start_time_;
-    joint_state.error.time_from_start = ros::Time::now() - start_time_ - trajectory_.front().time_from_start;
+    if(trajectory_.size() > 0)
+    {
+        joint_state.desired.positions.push_back(trajectory_.front().positions[pan_index_]);
+        joint_state.desired.velocities.push_back(trajectory_.front().velocities[pan_index_]);
+        joint_state.error.positions.push_back(trajectory_.front().positions[pan_index_] - pan_);
+        joint_state.error.velocities.push_back(trajectory_.front().velocities[pan_index_] - pan_speed_);
+        joint_state.desired.positions.push_back(trajectory_.front().positions[tilt_index_]);
+        joint_state.desired.velocities.push_back(trajectory_.front().velocities[tilt_index_]);
+        joint_state.error.positions.push_back(trajectory_.front().positions[tilt_index_] - tilt_);
+        joint_state.error.velocities.push_back(trajectory_.front().velocities[tilt_index_] - tilt_speed_);
+        joint_state.desired.time_from_start = trajectory_.front().time_from_start;
+        joint_state.actual.time_from_start = ros::Time::now() - start_time_;
+        joint_state.error.time_from_start = ros::Time::now() - start_time_ - trajectory_.front().time_from_start;
+    }
     m_joint_pub.publish(joint_state);
 
     // If there is stuff on the queue deal with it
