@@ -167,7 +167,7 @@ void PTU46_Node::Connect()
     // Subscribers : Only subscribe to the most recent instructions
     m_joint_sub = m_node.subscribe("/ptu_d46_controller/command", 1, &PTU46_Node::SetGoal, this);
 
-    m_joint_state_pub = m_node.advertise<sensor_msgs::JointState>("/joint_states", 50);
+    m_joint_state_pub = m_node.advertise<sensor_msgs::JointState>("/joint_states", 100);
 
     m_as.start();
     as_active_ = false;
