@@ -97,6 +97,8 @@ class PTU46_Node
         ros::Duration goal_time_tolerance_;
 
         double joint_state_rate_;
+
+        bool got_new_goal_;
 };
 
 PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_node_handle) :
@@ -104,7 +106,7 @@ PTU46_Node::PTU46_Node(ros::NodeHandle& node_handle, ros::NodeHandle& private_no
     m_node(node_handle), m_private_node(private_node_handle),
     m_as(node_handle, "/ptu_d46_controller/follow_joint_trajectory", boost::bind(&PTU46_Node::actionServerCallback, this, _1), false)
 {
-
+    got_new_goal_ = false;
 }
 
 PTU46_Node::~PTU46_Node()
@@ -248,7 +250,8 @@ void PTU46_Node::SetGoal(const trajectory_msgs::JointTrajectory::ConstPtr& msg)
         trajectory_.push_back(msg->points[i]);
     }
 
-    Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
+    got_new_goal_ = true;
+    //Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
 }
 
 /** Callback for the action server */
@@ -286,7 +289,8 @@ void PTU46_Node::actionServerCallback(const control_msgs::FollowJointTrajectoryG
     path_tolerance_ = goal->path_tolerance;
     goal_tolerance_ = goal->goal_tolerance;
     goal_time_tolerance_ = goal->goal_time_tolerance;
-    Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
+    got_new_goal_ = true;
+    //Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
 
     goal_start_time_ = ros::Time::now();
 
@@ -398,6 +402,12 @@ void PTU46_Node::SpinOnce() {
     // If there is stuff on the queue deal with it
     if(trajectory_.size() > 0)
     {
+        if(got_new_goal_)
+        {
+            Write(trajectory_.front().positions[pan_index_], trajectory_.front().velocities[pan_index_], trajectory_.front().positions[tilt_index_], trajectory_.front().velocities[tilt_index_]);
+            got_new_goal_ = false;
+        }
+
         double pan_tolerance = pan_tolerance_;
         double tilt_tolerance = tilt_tolerance_;
         ros::Duration time_tolerance = time_tolerance_;
